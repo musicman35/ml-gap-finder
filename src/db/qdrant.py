@@ -5,12 +5,12 @@ from typing import Any
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
-    PointStruct,
-    VectorParams,
-    Filter,
     FieldCondition,
+    Filter,
     MatchValue,
+    PointStruct,
     Range,
+    VectorParams,
 )
 
 from config.settings import settings

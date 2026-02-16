@@ -6,7 +6,7 @@ from typing import AsyncIterator
 from anthropic import AsyncAnthropic
 from ollama import AsyncClient as OllamaAsyncClient
 
-from config.settings import settings, LLMProvider
+from config.settings import LLMProvider, settings
 
 
 class BaseLLMClient(ABC):

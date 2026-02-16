@@ -1,8 +1,8 @@
 """Pytest fixtures for ML Gap Finder tests."""
 
-import pytest
-import pytest_asyncio
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 
 @pytest.fixture
@@ -106,7 +106,7 @@ def sample_gap():
 @pytest.fixture
 def sample_hypothesis():
     """Sample hypothesis."""
-    from src.services.hypothesis_generator import Hypothesis, Assumption, EvaluationPlan
+    from src.services.hypothesis_generator import Assumption, EvaluationPlan, Hypothesis
 
     return Hypothesis(
         hypothesis_id="hyp_test123",

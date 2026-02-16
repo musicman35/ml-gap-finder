@@ -1,14 +1,17 @@
 """API client for ML Gap Finder backend."""
 
+import os
 from typing import Any
 
 import httpx
+
+DEFAULT_API_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
 
 
 class APIClient:
     """Client for interacting with the ML Gap Finder API."""
 
-    def __init__(self, base_url: str = "http://localhost:8000"):
+    def __init__(self, base_url: str = DEFAULT_API_URL):
         """Initialize API client.
 
         Args:

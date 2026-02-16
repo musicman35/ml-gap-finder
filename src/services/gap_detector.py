@@ -1,6 +1,7 @@
 """Gap detection service for finding underexplored method combinations."""
 
 import hashlib
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -10,6 +11,11 @@ from src.db.neo4j import Neo4jClient
 from src.db.redis import RedisCache
 
 logger = structlog.get_logger()
+
+
+def _escape_regex(text: str) -> str:
+    """Escape regex metacharacters for safe use in Neo4j regex patterns."""
+    return re.escape(text)
 
 
 @dataclass
@@ -99,7 +105,7 @@ class GapDetectorService:
         # Ensure consistent ordering
         methods = sorted([method_a, method_b])
         key = f"{methods[0]}:{methods[1]}:{task}"
-        return hashlib.md5(key.encode()).hexdigest()[:12]
+        return hashlib.sha256(key.encode()).hexdigest()[:16]
 
     async def find_gaps(
         self,
@@ -149,12 +155,16 @@ class GapDetectorService:
         """
 
         # Get method A info
+        escaped_a = _escape_regex(method_a)
+        escaped_b = _escape_regex(method_b)
+        escaped_task = _escape_regex(task)
+
         result_a = await self.neo4j.run_query(
             query_a,
             {
-                "method_pattern": f"(?i).*{method_a}.*",
+                "method_pattern": f"(?i).*{escaped_a}.*",
                 "method_id": method_a,
-                "task_pattern": f"(?i).*{task}.*",
+                "task_pattern": f"(?i).*{escaped_task}.*",
             },
         )
 
@@ -162,9 +172,9 @@ class GapDetectorService:
         result_b = await self.neo4j.run_query(
             query_a,
             {
-                "method_pattern": f"(?i).*{method_b}.*",
+                "method_pattern": f"(?i).*{escaped_b}.*",
                 "method_id": method_b,
-                "task_pattern": f"(?i).*{task}.*",
+                "task_pattern": f"(?i).*{escaped_task}.*",
             },
         )
 
@@ -200,11 +210,11 @@ class GapDetectorService:
         combination_result = await self.neo4j.run_query(
             combination_query,
             {
-                "method_a_pattern": f"(?i).*{method_a}.*",
+                "method_a_pattern": f"(?i).*{escaped_a}.*",
                 "method_a_id": method_a,
-                "method_b_pattern": f"(?i).*{method_b}.*",
+                "method_b_pattern": f"(?i).*{escaped_b}.*",
                 "method_b_id": method_b,
-                "task_pattern": f"(?i).*{task}.*",
+                "task_pattern": f"(?i).*{escaped_task}.*",
             },
         )
 
@@ -371,14 +381,18 @@ class GapDetectorService:
             RETURN count(DISTINCT p) as count
         """
 
+        escaped_a = _escape_regex(method_a)
+        escaped_b = _escape_regex(method_b)
+        escaped_task = _escape_regex(task)
+
         result = await self.neo4j.run_query(
             query,
             {
-                "method_a_pattern": f"(?i).*{method_a}.*",
+                "method_a_pattern": f"(?i).*{escaped_a}.*",
                 "method_a_id": method_a,
-                "method_b_pattern": f"(?i).*{method_b}.*",
+                "method_b_pattern": f"(?i).*{escaped_b}.*",
                 "method_b_id": method_b,
-                "task_pattern": f"(?i).*{task}.*",
+                "task_pattern": f"(?i).*{escaped_task}.*",
             },
         )
 

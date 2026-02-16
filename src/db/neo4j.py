@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from neo4j import AsyncGraphDatabase, AsyncDriver
+from neo4j import AsyncDriver, AsyncGraphDatabase
 
 from config.settings import settings
 

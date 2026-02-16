@@ -1,9 +1,15 @@
 """Pydantic schemas for API request/response models."""
 
+from __future__ import annotations
+
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from src.services.gap_detector import GapResult as GapResultService
+    from src.services.hypothesis_generator import Hypothesis as HypothesisService
 
 
 # ============================================================================
@@ -51,6 +57,32 @@ class GapSearchResponse(BaseModel):
     method_b_paper_count: int
     combination_paper_count: int
     evidence_summary: dict[str, Any] = Field(default_factory=dict)
+
+    @classmethod
+    def from_service_model(cls, gap: GapResultService) -> GapSearchResponse:
+        """Create from service-layer GapResult."""
+        return cls(
+            gap_id=gap.gap_id,
+            is_gap=gap.is_gap,
+            method_a=MethodInfo(
+                method_id=gap.method_a.method_id,
+                name=gap.method_a.name,
+                type=gap.method_a.method_type,
+                paper_count=gap.method_a.paper_count,
+            ),
+            method_b=MethodInfo(
+                method_id=gap.method_b.method_id,
+                name=gap.method_b.name,
+                type=gap.method_b.method_type,
+                paper_count=gap.method_b.paper_count,
+            ),
+            task=gap.task,
+            gap_score=gap.gap_score,
+            method_a_paper_count=gap.method_a_paper_count,
+            method_b_paper_count=gap.method_b_paper_count,
+            combination_paper_count=gap.combination_paper_count,
+            evidence_summary=gap.evidence_summary,
+        )
 
 
 class GapDiscoverRequest(BaseModel):
@@ -177,6 +209,36 @@ class HypothesisResponse(BaseModel):
     specificity_score: int | None = None
     created_at: datetime
     model_version: str
+
+    @classmethod
+    def from_service_model(cls, h: HypothesisService) -> HypothesisResponse:
+        """Create from service-layer Hypothesis."""
+        return cls(
+            hypothesis_id=h.hypothesis_id,
+            hypothesis_text=h.hypothesis_text,
+            mechanism=h.mechanism,
+            assumptions=[
+                Assumption(
+                    text=a.text,
+                    evidence_paper_id=a.evidence_paper_id,
+                    evidence_excerpt=a.evidence_excerpt,
+                )
+                for a in h.assumptions
+            ],
+            evaluation_plan=EvaluationPlan(
+                datasets=h.evaluation_plan.datasets,
+                baselines=h.evaluation_plan.baselines,
+                metrics=h.evaluation_plan.metrics,
+                expected_outcome=h.evaluation_plan.expected_outcome,
+            ),
+            evidence_paper_ids=h.evidence_paper_ids,
+            gap_description=h.gap_description,
+            coherence_score=h.coherence_score,
+            evidence_relevance_score=h.evidence_relevance_score,
+            specificity_score=h.specificity_score,
+            created_at=h.created_at,
+            model_version=h.model_version,
+        )
 
 
 class HypothesisEvaluateRequest(BaseModel):

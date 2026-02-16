@@ -1,0 +1,16 @@
+.venv
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.env
+.env.example
+*.md
+LICENSE
+.mypy_cache
+.pytest_cache
+.ruff_cache
+tests/
+data/

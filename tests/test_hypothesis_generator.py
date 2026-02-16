@@ -1,16 +1,14 @@
 """Tests for hypothesis generator service."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from src.services.hypothesis_generator import (
-    HypothesisGeneratorService,
-    Hypothesis,
-    Assumption,
-    EvaluationPlan,
-)
-from src.services.gap_detector import GapResult, MethodInfo
+import pytest
+
 from src.services.evidence_retriever import EvidenceBundle, PaperEvidence
+from src.services.hypothesis_generator import (
+    Hypothesis,
+    HypothesisGeneratorService,
+)
 
 
 @pytest.fixture
@@ -139,6 +137,45 @@ Contrastive learning provides robust representations. GNNs capture graph structu
         assert "Test Paper" in result
         assert "2301.00001" in result
 
+    def test_format_evidence_with_none_excerpt(self, hypothesis_generator):
+        """Test evidence formatting handles None excerpts without crashing."""
+        papers = [
+            MagicMock(title="Test Paper", arxiv_id="2301.00001", excerpt=None),
+        ]
+
+        result = hypothesis_generator._format_evidence(papers)
+
+        assert "Test Paper" in result
+        assert "2301.00001" in result
+
+    def test_format_evidence_empty_list(self, hypothesis_generator):
+        """Test evidence formatting with no papers."""
+        result = hypothesis_generator._format_evidence([])
+        assert result == "No specific evidence available."
+
+    def test_hypothesis_id_is_full_uuid_hex(
+        self, hypothesis_generator, sample_gap, sample_evidence_bundle
+    ):
+        """Test that hypothesis IDs are full 32-char UUID hex strings."""
+        result = hypothesis_generator._parse_hypothesis_response(
+            response="Test response",
+            gap=sample_gap,
+            evidence_bundle=sample_evidence_bundle,
+        )
+        assert len(result.hypothesis_id) == 32
+        int(result.hypothesis_id, 16)  # Valid hex
+
+    def test_hypothesis_created_at_has_timezone(
+        self, hypothesis_generator, sample_gap, sample_evidence_bundle
+    ):
+        """Test that created_at has timezone info (UTC)."""
+        result = hypothesis_generator._parse_hypothesis_response(
+            response="Test response",
+            gap=sample_gap,
+            evidence_bundle=sample_evidence_bundle,
+        )
+        assert result.created_at.tzinfo is not None
+
     def test_hypothesis_to_dict(self, sample_hypothesis):
         """Test Hypothesis serialization."""
         result = sample_hypothesis.to_dict()
@@ -182,6 +219,30 @@ This is the mechanism explanation.
         assert "mechanism" in result.mechanism.lower()
         assert len(result.assumptions) >= 2
 
+    def test_parse_hypothesis_handles_h2_headers(
+        self, hypothesis_generator, sample_gap, sample_evidence_bundle
+    ):
+        """Test that ## headers (not just ###) are parsed correctly."""
+        response = """
+## Hypothesis
+Test hypothesis with h2 header.
+
+## Mechanism
+The mechanism with h2 header.
+
+## Assumptions
+1. First assumption
+"""
+
+        result = hypothesis_generator._parse_hypothesis_response(
+            response=response,
+            gap=sample_gap,
+            evidence_bundle=sample_evidence_bundle,
+        )
+
+        assert "Test hypothesis" in result.hypothesis_text
+        assert "mechanism" in result.mechanism.lower()
+
     def test_parse_hypothesis_handles_malformed_response(
         self,
         hypothesis_generator,
@@ -200,3 +261,33 @@ This is the mechanism explanation.
         # Should still return a valid hypothesis with the response text
         assert result.hypothesis_text == response
         assert result.hypothesis_id is not None
+
+
+class TestRateLimiter:
+    """Tests for Redis rate limiter (atomic implementation)."""
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_allows_first_request(self, mock_redis):
+        """Test that first request is always allowed."""
+        from src.db.redis import RedisCache
+        cache = RedisCache()
+        cache._client = mock_redis._client = AsyncMock()
+        cache._client.incr = AsyncMock(return_value=1)
+        cache._client.expire = AsyncMock()
+
+        result = await cache.check_rate_limit("test_key", max_requests=5, window_seconds=60)
+
+        assert result is True
+        cache._client.expire.assert_called_once_with("test_key", 60)
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_blocks_over_limit(self, mock_redis):
+        """Test that requests over limit are blocked."""
+        from src.db.redis import RedisCache
+        cache = RedisCache()
+        cache._client = AsyncMock()
+        cache._client.incr = AsyncMock(return_value=6)
+
+        result = await cache.check_rate_limit("test_key", max_requests=5, window_seconds=60)
+
+        assert result is False

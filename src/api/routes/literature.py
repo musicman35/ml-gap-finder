@@ -1,36 +1,27 @@
 """Literature positioning API routes."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from src.api.schemas import (
     LiteraturePositionRequest,
     LiteraturePositionResponse,
-    SimilarPaper,
     MethodLineage,
     RelatedWorkOutlineRequest,
     RelatedWorkOutlineResponse,
     RelatedWorkSection,
+    SimilarPaper,
 )
-from src.db.neo4j import Neo4jClient
-from src.db.postgres import PostgresClient
-from src.db.qdrant import QdrantVectorStore
 from src.services.literature_positioner import LiteraturePositionerService
 
 router = APIRouter(prefix="/api/v1/literature", tags=["literature"])
 
 
-async def get_literature_positioner() -> LiteraturePositionerService:
-    """Dependency to get literature positioner service."""
-    neo4j = Neo4jClient()
-    await neo4j.connect()
-    postgres = PostgresClient()
-    await postgres.connect()
-    qdrant = QdrantVectorStore()
-
+def get_literature_positioner(request: Request) -> LiteraturePositionerService:
+    """Dependency to get literature positioner service using shared connections."""
     return LiteraturePositionerService(
-        neo4j_client=neo4j,
-        postgres_client=postgres,
-        qdrant_client=qdrant,
+        neo4j_client=request.app.state.neo4j,
+        postgres_client=request.app.state.postgres,
+        qdrant_client=request.app.state.qdrant,
     )
 
 

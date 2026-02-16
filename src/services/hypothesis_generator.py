@@ -2,7 +2,7 @@
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import structlog
@@ -10,8 +10,8 @@ import structlog
 from src.db.postgres import PostgresClient
 from src.llm.client import BaseLLMClient, get_llm_client
 from src.llm.prompts import PromptTemplates
-from src.services.gap_detector import GapResult
 from src.services.evidence_retriever import EvidenceBundle
+from src.services.gap_detector import GapResult
 
 logger = structlog.get_logger()
 
@@ -52,7 +52,9 @@ class Hypothesis:
     evidence_relevance_score: int | None = None
     specificity_score: int | None = None
 
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(
+        default_factory=lambda: datetime.now(tz=timezone.utc)
+    )
     model_version: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -132,12 +134,13 @@ class HypothesisGeneratorService:
             method_b=gap.method_b.name,
         )
 
-        # Format evidence for the prompt
+        # Format evidence for the prompt — use all available papers
+        half = max(1, len(evidence_bundle.papers) // 2)
         method_a_evidence = self._format_evidence(
-            [p for p in evidence_bundle.papers[:3]]
+            evidence_bundle.papers[:half]
         )
         method_b_evidence = self._format_evidence(
-            [p for p in evidence_bundle.papers[3:6]]
+            evidence_bundle.papers[half:]
         )
 
         gap_description = (
@@ -202,7 +205,8 @@ class HypothesisGeneratorService:
 
         lines = []
         for p in papers:
-            lines.append(f"- {p.title} ({p.arxiv_id}): {p.excerpt[:200]}...")
+            excerpt = (p.excerpt or "")[:200]
+            lines.append(f"- {p.title} ({p.arxiv_id}): {excerpt}...")
         return "\n".join(lines)
 
     def _parse_hypothesis_response(
@@ -221,39 +225,38 @@ class HypothesisGeneratorService:
         Returns:
             Parsed hypothesis.
         """
-        import uuid
+        import uuid  # noqa: E401
 
-        # Extract sections using regex
-        hypothesis_match = re.search(
-            r"### Hypothesis\n(.*?)(?=###|\Z)",
-            response,
-            re.DOTALL,
-        )
-        mechanism_match = re.search(
-            r"### Proposed Mechanism\n(.*?)(?=###|\Z)",
-            response,
-            re.DOTALL,
-        )
-        assumptions_match = re.search(
-            r"### Key Assumptions\n(.*?)(?=###|\Z)",
-            response,
-            re.DOTALL,
-        )
-        eval_match = re.search(
-            r"### Evaluation Plan\n(.*?)(?=###|\Z)",
-            response,
-            re.DOTALL,
-        )
+        # Extract sections using resilient regex patterns
+        # Matches ##/### headers, **Header:** format, and variations
+        def _find_section(header_pattern: str, text: str) -> str | None:
+            patterns = [
+                rf"###?\s*(?:{header_pattern})\s*\n(.*?)(?=\n###?|\Z)",
+                rf"\*\*(?:{header_pattern})[:\*]*\*\*\s*\n?(.*?)(?=\n\*\*|\Z)",
+            ]
+            for pat in patterns:
+                match = re.search(pat, text, re.DOTALL | re.IGNORECASE)
+                if match and match.group(1):
+                    return match.group(1).strip()
+            return None
 
         hypothesis_text = (
-            hypothesis_match.group(1).strip() if hypothesis_match else response[:500]
+            _find_section("Hypothesis", response) or response[:500]
         )
-        mechanism = mechanism_match.group(1).strip() if mechanism_match else ""
+        mechanism = (
+            _find_section(r"Proposed\s+Mechanism|Mechanism", response) or ""
+        )
+        assumptions_text = _find_section(
+            r"Key\s+Assumptions|Assumptions", response
+        )
+        eval_text = _find_section(
+            r"Evaluation\s+Plan|Evaluation", response
+        )
 
         # Parse assumptions
         assumptions = []
-        if assumptions_match:
-            assumption_lines = assumptions_match.group(1).strip().split("\n")
+        if assumptions_text:
+            assumption_lines = assumptions_text.split("\n")
             for line in assumption_lines:
                 if line.strip().startswith(("1.", "2.", "3.", "-")):
                     text = re.sub(r"^\d+\.\s*|-\s*", "", line).strip()
@@ -262,8 +265,7 @@ class HypothesisGeneratorService:
 
         # Parse evaluation plan
         evaluation_plan = EvaluationPlan()
-        if eval_match:
-            eval_text = eval_match.group(1)
+        if eval_text:
             dataset_match = re.search(r"Dataset[s]?:\s*(.+)", eval_text, re.IGNORECASE)
             baselines_match = re.search(r"Baseline[s]?:\s*(.+)", eval_text, re.IGNORECASE)
             metrics_match = re.search(r"Metric[s]?:\s*(.+)", eval_text, re.IGNORECASE)
@@ -288,7 +290,7 @@ class HypothesisGeneratorService:
         evidence_paper_ids = [p.arxiv_id for p in evidence_bundle.papers]
 
         return Hypothesis(
-            hypothesis_id=str(uuid.uuid4())[:12],
+            hypothesis_id=uuid.uuid4().hex,
             hypothesis_text=hypothesis_text,
             mechanism=mechanism,
             assumptions=assumptions if assumptions else [Assumption(text="See full response")],

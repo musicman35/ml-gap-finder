@@ -153,7 +153,7 @@ class RedisCache:
         max_requests: int,
         window_seconds: int,
     ) -> bool:
-        """Check if request is within rate limit.
+        """Check if request is within rate limit (atomic).
 
         Args:
             key: Rate limit key (e.g., "ratelimit:api:user123").
@@ -166,16 +166,12 @@ class RedisCache:
         if not self._client:
             raise RuntimeError("Not connected to Redis")
 
-        current = await self._client.get(key)
-        if current is None:
-            await self._client.setex(key, window_seconds, 1)
-            return True
-
-        if int(current) >= max_requests:
-            return False
-
-        await self._client.incr(key)
-        return True
+        # Atomic: increment first, then check the value
+        current = await self._client.incr(key)
+        if current == 1:
+            # First request in window — set the expiry
+            await self._client.expire(key, window_seconds)
+        return current <= max_requests
 
     # Caching helpers for specific use cases
     async def cache_paper_metadata(

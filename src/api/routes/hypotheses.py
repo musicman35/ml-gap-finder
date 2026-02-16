@@ -1,48 +1,39 @@
 """Hypothesis generation API routes."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from src.api.schemas import (
-    HypothesisGenerateRequest,
-    HypothesisResponse,
     HypothesisEvaluateRequest,
     HypothesisEvaluateResponse,
-    Assumption,
-    EvaluationPlan,
+    HypothesisGenerateRequest,
+    HypothesisResponse,
 )
-from src.db.neo4j import Neo4jClient
-from src.db.postgres import PostgresClient
-from src.db.qdrant import QdrantVectorStore
-from src.db.redis import RedisCache
-from src.services.gap_detector import GapDetectorService
 from src.services.evidence_retriever import EvidenceRetrieverService
+from src.services.gap_detector import GapDetectorService
 from src.services.hypothesis_generator import HypothesisGeneratorService
 
 router = APIRouter(prefix="/api/v1/hypotheses", tags=["hypotheses"])
 
 
-async def get_services() -> tuple[
+def get_services(
+    request: Request,
+) -> tuple[
     GapDetectorService,
     EvidenceRetrieverService,
     HypothesisGeneratorService,
 ]:
-    """Dependency to get required services."""
-    neo4j = Neo4jClient()
-    await neo4j.connect()
-    postgres = PostgresClient()
-    await postgres.connect()
-    redis = RedisCache()
-    await redis.connect()
-    qdrant = QdrantVectorStore()
-
-    gap_detector = GapDetectorService(neo4j_client=neo4j, cache=redis)
+    """Dependency to get required services using shared connections."""
+    gap_detector = GapDetectorService(
+        neo4j_client=request.app.state.neo4j,
+        cache=request.app.state.redis,
+    )
     evidence_retriever = EvidenceRetrieverService(
-        neo4j_client=neo4j,
-        postgres_client=postgres,
-        qdrant_client=qdrant,
+        neo4j_client=request.app.state.neo4j,
+        postgres_client=request.app.state.postgres,
+        qdrant_client=request.app.state.qdrant,
     )
     hypothesis_generator = HypothesisGeneratorService(
-        postgres_client=postgres,
+        postgres_client=request.app.state.postgres,
     )
 
     return gap_detector, evidence_retriever, hypothesis_generator
@@ -89,32 +80,7 @@ async def generate_hypothesis(
             evidence_bundle=evidence,
         )
 
-        return HypothesisResponse(
-            hypothesis_id=hypothesis.hypothesis_id,
-            hypothesis_text=hypothesis.hypothesis_text,
-            mechanism=hypothesis.mechanism,
-            assumptions=[
-                Assumption(
-                    text=a.text,
-                    evidence_paper_id=a.evidence_paper_id,
-                    evidence_excerpt=a.evidence_excerpt,
-                )
-                for a in hypothesis.assumptions
-            ],
-            evaluation_plan=EvaluationPlan(
-                datasets=hypothesis.evaluation_plan.datasets,
-                baselines=hypothesis.evaluation_plan.baselines,
-                metrics=hypothesis.evaluation_plan.metrics,
-                expected_outcome=hypothesis.evaluation_plan.expected_outcome,
-            ),
-            evidence_paper_ids=hypothesis.evidence_paper_ids,
-            gap_description=hypothesis.gap_description,
-            coherence_score=hypothesis.coherence_score,
-            evidence_relevance_score=hypothesis.evidence_relevance_score,
-            specificity_score=hypothesis.specificity_score,
-            created_at=hypothesis.created_at,
-            model_version=hypothesis.model_version,
-        )
+        return HypothesisResponse.from_service_model(hypothesis)
 
     except HTTPException:
         raise
@@ -135,32 +101,7 @@ async def get_hypothesis(
     if not hypothesis:
         raise HTTPException(status_code=404, detail="Hypothesis not found")
 
-    return HypothesisResponse(
-        hypothesis_id=hypothesis.hypothesis_id,
-        hypothesis_text=hypothesis.hypothesis_text,
-        mechanism=hypothesis.mechanism,
-        assumptions=[
-            Assumption(
-                text=a.text,
-                evidence_paper_id=a.evidence_paper_id,
-                evidence_excerpt=a.evidence_excerpt,
-            )
-            for a in hypothesis.assumptions
-        ],
-        evaluation_plan=EvaluationPlan(
-            datasets=hypothesis.evaluation_plan.datasets,
-            baselines=hypothesis.evaluation_plan.baselines,
-            metrics=hypothesis.evaluation_plan.metrics,
-            expected_outcome=hypothesis.evaluation_plan.expected_outcome,
-        ),
-        evidence_paper_ids=hypothesis.evidence_paper_ids,
-        gap_description=hypothesis.gap_description,
-        coherence_score=hypothesis.coherence_score,
-        evidence_relevance_score=hypothesis.evidence_relevance_score,
-        specificity_score=hypothesis.specificity_score,
-        created_at=hypothesis.created_at,
-        model_version=hypothesis.model_version,
-    )
+    return HypothesisResponse.from_service_model(hypothesis)
 
 
 @router.post("/{hypothesis_id}/evaluate", response_model=HypothesisEvaluateResponse)

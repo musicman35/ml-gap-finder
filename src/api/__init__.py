@@ -1,11 +1,11 @@
 """API module for ML Gap Finder."""
 
 from src.api.schemas import (
-    GapSearchRequest,
-    GapSearchResponse,
-    GapDiscoverRequest,
     EvidenceRequest,
     EvidenceResponse,
+    GapDiscoverRequest,
+    GapSearchRequest,
+    GapSearchResponse,
     HypothesisGenerateRequest,
     HypothesisResponse,
     LiteraturePositionRequest,

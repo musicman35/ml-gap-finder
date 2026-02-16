@@ -1,0 +1,21 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# Copy dependency files first for layer caching
+COPY pyproject.toml uv.lock ./
+
+# Install dependencies
+RUN uv sync --frozen --no-dev --no-install-project
+
+# Copy UI code, config, and Streamlit config
+COPY ui/ ui/
+COPY config/ config/
+COPY .streamlit/ .streamlit/
+
+EXPOSE 8501
+
+CMD ["uv", "run", "streamlit", "run", "ui/app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]

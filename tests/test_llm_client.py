@@ -1,12 +1,13 @@
 """Tests for LLM client implementations."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from config.settings import LLMProvider
 from src.llm.client import (
-    BaseLLMClient,
     AnthropicClient,
+    BaseLLMClient,
     OllamaLLMClient,
     get_llm_client,
 )
